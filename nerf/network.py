@@ -125,6 +125,7 @@ class NeRFNetwork(NeRFRenderer):
 
     def density(self, x):
         # x: [N, 3], in [-bound, bound]
+        print(f"---------DEBUG: Density call, x: {x.shape}, bound: {self.bound}")
 
         x = self.encoder(x, bound=self.bound)
         h = x

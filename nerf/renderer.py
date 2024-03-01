@@ -130,6 +130,8 @@ class NeRFRenderer(nn.Module):
         prefix = rays_o.shape[:-1]
         rays_o = rays_o.contiguous().view(-1, 3)
         rays_d = rays_d.contiguous().view(-1, 3)
+        
+        print(f"------DEBUG: prefix: {prefix}, rays_o: {rays_o.shape}, rays_d: {rays_d.shape}")
 
         N = rays_o.shape[0] # N = B * N, in fact
         device = rays_o.device
@@ -142,11 +144,15 @@ class NeRFRenderer(nn.Module):
         nears.unsqueeze_(-1)
         fars.unsqueeze_(-1)
 
+        print(f"------DEBUG: nears: {nears.shape}, fars: {fars.shape}")
+        
         #print(f'nears = {nears.min().item()} ~ {nears.max().item()}, fars = {fars.min().item()} ~ {fars.max().item()}')
 
         z_vals = torch.linspace(0.0, 1.0, num_steps, device=device).unsqueeze(0) # [1, T]
         z_vals = z_vals.expand((N, num_steps)) # [N, T]
         z_vals = nears + (fars - nears) * z_vals # [N, T], in [nears, fars]
+
+        print(f"------DEBUG: z_vals: {z_vals.shape}, num_steps: {num_steps}")
 
         # perturb z_vals
         sample_dist = (fars - nears) / num_steps
@@ -157,6 +163,8 @@ class NeRFRenderer(nn.Module):
         # generate xyzs
         xyzs = rays_o.unsqueeze(-2) + rays_d.unsqueeze(-2) * z_vals.unsqueeze(-1) # [N, 1, 3] * [N, T, 1] -> [N, T, 3]
         xyzs = torch.min(torch.max(xyzs, aabb[:3]), aabb[3:]) # a manual clip.
+
+        print(f"------DEBUG: xyzs: {xyzs.shape}")
 
         #plot_pointcloud(xyzs.reshape(-1, 3).detach().cpu().numpy())
 
@@ -547,6 +555,8 @@ class NeRFRenderer(nn.Module):
         else:
             _run = self.run
 
+        print(f"---DEBUG: max_ray_batch: {max_ray_batch}")
+
         B, N = rays_o.shape[:2]
         device = rays_o.device
 
@@ -558,6 +568,7 @@ class NeRFRenderer(nn.Module):
             for b in range(B):
                 head = 0
                 while head < N:
+                    print(f"---DEBUG: head: {head}")
                     tail = min(head + max_ray_batch, N)
                     results_ = _run(rays_o[b:b+1, head:tail], rays_d[b:b+1, head:tail], **kwargs)
                     depth[b:b+1, head:tail] = results_['depth']

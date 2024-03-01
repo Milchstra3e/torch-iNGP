@@ -591,10 +591,13 @@ class Trainer(object):
 
     # moved out bg_color and perturb for more flexible control...
     def test_step(self, data, bg_color=None, perturb=False):  
+        print("")
 
         rays_o = data['rays_o'] # [B, N, 3]
         rays_d = data['rays_d'] # [B, N, 3]
         H, W = data['H'], data['W']
+
+        print(f"DEBUG: rays_o: {rays_o.shape}, rays_d: {rays_d.shape}, H: {H}, W: {W}, H x W: {H * W}")
 
         if bg_color is not None:
             bg_color = bg_color.to(self.device)
@@ -603,6 +606,8 @@ class Trainer(object):
 
         pred_rgb = outputs['image'].reshape(-1, H, W, 3)
         pred_depth = outputs['depth'].reshape(-1, H, W)
+
+        print(f"DEBUG: outputs: {outputs['image'].shape}, pred_rgb: {pred_rgb.shape}")
 
         return pred_rgb, pred_depth
 
@@ -705,6 +710,8 @@ class Trainer(object):
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_depth.png'), pred_depth)
 
                 pbar.update(loader.batch_size)
+
+                break
         
         if write_video:
             all_preds = np.stack(all_preds, axis=0)

@@ -38,6 +38,8 @@ class _grid_encode(Function):
         S = np.log2(per_level_scale) # resolution multiplier at each level, apply log2 for later CUDA exp2f
         H = base_resolution # base resolution
 
+        print(f"---------------DEBUG: B - batch: {B}, D - xyz: {D}, L - level: {L}, C - embedding dim: {C}, S - (16 -> 4096): {S}, H - base resolution: {H}")
+
         # manually handle autocast (only use half precision embeddings, inputs must be float for enough precision)
         # if C % 2 != 0, force float, since half for atomicAdd is very slow.
         if torch.is_autocast_enabled() and C % 2 == 0:
@@ -50,6 +52,9 @@ class _grid_encode(Function):
             dy_dx = torch.empty(B, L * D * C, device=inputs.device, dtype=embeddings.dtype)
         else:
             dy_dx = None
+
+
+        print(f"---------------DEBUG: inputs: {inputs.shape}, embeddings: {embeddings.shape}, offsets: {offsets}, outputs: {outputs.shape}")
 
         _backend.grid_encode_forward(inputs, embeddings, offsets, outputs, B, D, C, L, S, H, dy_dx, gridtype, align_corners, interpolation)
 
@@ -153,9 +158,13 @@ class GridEncoder(nn.Module):
         prefix_shape = list(inputs.shape[:-1])
         inputs = inputs.view(-1, self.input_dim)
 
+        print(f"------------DEBUG: prefix_shape: {prefix_shape}, inputs: {inputs.shape}")
+
         outputs = grid_encode(inputs, self.embeddings, self.offsets, self.per_level_scale, self.base_resolution, inputs.requires_grad, self.gridtype_id, self.align_corners, self.interp_id)
         outputs = outputs.view(prefix_shape + [self.output_dim])
 
+        print(f"------------DEBUG: outputs: {outputs.shape}")
+        
         #print('outputs', outputs.shape, outputs.dtype, outputs.min().item(), outputs.max().item())
 
         return outputs
