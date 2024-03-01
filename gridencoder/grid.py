@@ -21,6 +21,9 @@ _interp_to_id = {
     'smoothstep': 1,
 }
 
+log_path = "/external-volume/log"
+cnt = 0
+
 class _grid_encode(Function):
     @staticmethod
     @custom_fwd
@@ -47,6 +50,7 @@ class _grid_encode(Function):
 
         # L first, optimize cache for cuda kernel, but needs an extra permute later
         outputs = torch.empty(L, B, C, device=inputs.device, dtype=embeddings.dtype)
+        grid_indice = torch.zeros(L, B, (1 << D), device=inputs.device, dtype=torch.int32)
 
         if calc_grad_inputs:
             dy_dx = torch.empty(B, L * D * C, device=inputs.device, dtype=embeddings.dtype)
@@ -54,10 +58,16 @@ class _grid_encode(Function):
             dy_dx = None
 
 
-        print(f"---------------DEBUG: inputs: {inputs.shape}, embeddings: {embeddings.shape}, offsets: {offsets}, outputs: {outputs.shape}")
+        print(f"---------------DEBUG: inputs: {inputs.shape}, embeddings: {embeddings.shape}, offsets: {offsets}, outputs: {outputs.shape}, grid_indice: {grid_indice.shape}")
 
-        _backend.grid_encode_forward(inputs, embeddings, offsets, outputs, B, D, C, L, S, H, dy_dx, gridtype, align_corners, interpolation)
+        _backend.grid_encode_forward(inputs, embeddings, offsets, outputs, grid_indice, B, D, C, L, S, H, dy_dx, gridtype, align_corners, interpolation)
 
+        grid_indice = grid_indice.detach().cpu().numpy()
+        
+        global cnt
+        np.save(f"{log_path}/{cnt}.npy", grid_indice)
+        cnt += 1
+        
         # permute back to [B, L * C]
         outputs = outputs.permute(1, 0, 2).reshape(B, L * C)
 
@@ -158,7 +168,7 @@ class GridEncoder(nn.Module):
         prefix_shape = list(inputs.shape[:-1])
         inputs = inputs.view(-1, self.input_dim)
 
-        print(f"------------DEBUG: prefix_shape: {prefix_shape}, inputs: {inputs.shape}")
+        print(f"------------DEBUG: prefix_shape: {prefix_shape}, inputs: {inputs.shape}, log2_hashmap_size: {self.log2_hashmap_size}, max params: {self.max_params}")
 
         outputs = grid_encode(inputs, self.embeddings, self.offsets, self.per_level_scale, self.base_resolution, inputs.requires_grad, self.gridtype_id, self.align_corners, self.interp_id)
         outputs = outputs.view(prefix_shape + [self.output_dim])
