@@ -676,6 +676,8 @@ class Trainer(object):
 
         pbar = tqdm.tqdm(total=len(loader) * loader.batch_size, bar_format='{percentage:3.0f}% {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]')
         self.model.eval()
+        self.model.dump_params()
+        exit()
 
         if write_video:
             all_preds = []

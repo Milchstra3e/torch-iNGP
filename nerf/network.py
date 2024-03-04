@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
+import os
 
 from encoding import get_encoder
 from activation import trunc_exp
@@ -204,3 +206,37 @@ class NeRFNetwork(NeRFRenderer):
             params.append({'params': self.bg_net.parameters(), 'lr': lr})
         
         return params
+    
+    def dump_params(self):
+        log_path = "/external-volume/exp-weight-distribution"
+        
+        print("")
+        
+        print("ENCODER -----------------------------")
+        os.makedirs(f"{log_path}/encoder", exist_ok=True)
+        np.save(f"{log_path}/encoder/offsets.npy", self.encoder.offsets.detach().cpu().numpy())
+        for name, param in self.encoder.named_parameters():
+            print(f"Name: {name}, Parameter shape: {param.shape}")
+            np.save(f"{log_path}/encoder/{name}.npy", param.detach().cpu().numpy())
+            
+        print("SIGMA NET -----------------------------")
+        os.makedirs(f"{log_path}/sigma_net", exist_ok=True)
+        for name, param in self.sigma_net.named_parameters():
+            print(f"Name: {name}, Parameter shape: {param.shape}")
+            np.save(f"{log_path}/sigma_net/{name}.npy", param.detach().cpu().numpy())
+            
+        print("ENCODER DIR -----------------------------")
+        os.makedirs(f"{log_path}/encoder_dir", exist_ok=True)
+        for name, param in self.encoder_dir.named_parameters():
+            print(f"Name: {name}, Parameter shape: {param.shape}")
+            np.save(f"{log_path}/encoder_dir/{name}.npy", param.detach().cpu().numpy())
+            
+        print("COLOR NET -----------------------------")
+        os.makedirs(f"{log_path}/color_net", exist_ok=True)
+        for name, param in self.color_net.named_parameters():
+            print(f"Name: {name}, Parameter shape: {param.shape}")
+            np.save(f"{log_path}/color_net/{name}.npy", param.detach().cpu().numpy())
+            
+        print("-----------------------------")
+         
+        
