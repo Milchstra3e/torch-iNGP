@@ -204,3 +204,20 @@ class NeRFNetwork(NeRFRenderer):
             params.append({'params': self.bg_net.parameters(), 'lr': lr})
         
         return params
+
+    def pruning(self):
+        with torch.no_grad():
+            offsets = self.encoder.offsets
+            for level in range(0,16):
+                for _, param in self.encoder.named_parameters():
+                    level_feature = param[offsets[level]:offsets[level + 1],:]
+                    abs_level_feature = torch.abs(level_feature)
+                    mask = abs_level_feature < 0.5
+                    
+                    filter_cnt = torch.sum(mask)
+                    total_cnt = (offsets[level + 1] - offsets[level]) * 2
+                    print(f"LEVEL: {level} - {filter_cnt} / {total_cnt} : {filter_cnt / total_cnt}")
+                    
+                    level_feature[mask] = 0
+                    param[offsets[level]:offsets[level + 1],:] = level_feature
+            

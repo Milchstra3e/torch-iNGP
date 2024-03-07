@@ -676,6 +676,7 @@ class Trainer(object):
 
         pbar = tqdm.tqdm(total=len(loader) * loader.batch_size, bar_format='{percentage:3.0f}% {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]')
         self.model.eval()
+        self.model.pruning()
 
         if write_video:
             all_preds = []
@@ -705,6 +706,7 @@ class Trainer(object):
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_depth.png'), pred_depth)
 
                 pbar.update(loader.batch_size)
+                break
         
         if write_video:
             all_preds = np.stack(all_preds, axis=0)
