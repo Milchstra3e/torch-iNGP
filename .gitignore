@@ -15,3 +15,6 @@ dnerf/network_basis_perpoint.py
 
 **neus*
 neus/
+
+choh/nerf_synthetic
+choh/nerf_synthetic/**

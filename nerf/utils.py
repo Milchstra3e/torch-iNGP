@@ -657,9 +657,9 @@ class Trainer(object):
         if self.use_tensorboardX and self.local_rank == 0:
             self.writer.close()
 
-    def evaluate(self, loader, name=None):
+    def evaluate(self, loader, name=None, threshold=1.0):
         self.use_tensorboardX, use_tensorboardX = False, self.use_tensorboardX
-        self.evaluate_one_epoch(loader, name)
+        self.evaluate_one_epoch(loader, name, threshold=threshold)
         self.use_tensorboardX = use_tensorboardX
 
     def test(self, loader, save_path=None, name=None, write_video=True):
@@ -912,8 +912,11 @@ class Trainer(object):
         self.log(f"==> Finished Epoch {self.epoch}.")
 
 
-    def evaluate_one_epoch(self, loader, name=None):
+    def evaluate_one_epoch(self, loader, name=None, threshold=1.0):
         self.log(f"++> Evaluate at epoch {self.epoch} ...")
+        info = self.model.inactivate(threshold)
+        for level, filter_cnt, total_cnt in info:
+            self.log(f"{filter_cnt / total_cnt * 100 : 0.6f}")
 
         if name is None:
             name = f'{self.name}_ep{self.epoch:04d}'
