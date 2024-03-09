@@ -1,9 +1,9 @@
 import torch
 import argparse
 
-from src.nerf.provider import NeRFDataset
-from src.nerf.utils import *
-from src.nerf.network import NeRFNetwork
+from iNGP.nerf.provider import NeRFDataset
+from iNGP.nerf.utils import *
+from iNGP.nerf.network import NeRFNetwork
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
