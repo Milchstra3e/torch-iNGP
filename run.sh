@@ -1,4 +1,4 @@
-export PYTHONPATH=/root/develop/iNGP/
+export PYTHONPATH=${PWD}/iNGP/
 
 # single object rendering
 # python ./single_object_nerf.py  /external-volume/dataset/nerf_synthetic/lego    \
