@@ -1,5 +1,6 @@
 import torch
 import argparse
+import gc
 
 from iNGP.nerf.provider import NeRFDataset
 from iNGP.nerf.utils import *
@@ -84,6 +85,12 @@ if __name__ == '__main__':
 
     test_loader = NeRFDataset(opt, device=device, type='test').dataloader()
 
-    if test_loader.has_gt:
-        trainer.do_benchmark(1, "single_cuda", test_loader)
-        trainer.do_benchmark(1, "multiple_cuda", test_loader)
+    size = 8
+
+    if test_loader.has_gt:        
+        trainer.do_benchmark(size, "single_cuda", test_loader)
+        
+        torch.cuda.empty_cache()
+        gc.collect()
+        
+        trainer.do_benchmark(size, "multiple_cuda", test_loader)

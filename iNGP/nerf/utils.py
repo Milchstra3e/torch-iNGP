@@ -5,6 +5,7 @@ import math
 import imageio
 import random
 import warnings
+import gc
 import tensorboardX
 
 import numpy as np
@@ -615,25 +616,24 @@ class Trainer(object):
 
     def do_multiple_cuda(self, dataset):        
         preds, truths = list(), list()
-        
-        for data in dataset:
-            rays_o = data['rays_o']
-            rays_d = data['rays_d']
-            images = data['images']
-            B, H, W, C = images.shape
+                        
+        rays_o = dataset["rays_o"]
+        rays_d = dataset["rays_d"]
+        images = dataset["images"]            
+        B, H, W, C = images.shape
 
-            bg_color = 1
-            if C == 4:
-                gt_rgb = images[..., :3] * images[..., 3:] + bg_color * (1 - images[..., 3:])
-            else:
-                gt_rgb = images
-            
-            outputs = self.model.render_multiple_cuda(rays_o, rays_d, **vars(self.opt))
-            
-            pred_rgb = outputs.reshape(B, H, W, 3)
-            
-            preds.append(pred_rgb)
-            truths.append(gt_rgb)  
+        bg_color = 1
+        if C == 4:
+            gt_rgb = images[..., :3] * images[..., 3:] + bg_color * (1 - images[..., 3:])
+        else:
+            gt_rgb = images
+                    
+        outputs = self.model.render_multiple_cuda(rays_o, rays_d, **vars(self.opt))
+        
+        pred_rgb = outputs.reshape(B, H, W, 3)
+        
+        preds.append(pred_rgb)
+        truths.append(gt_rgb)
         
         return preds, truths
 
@@ -717,23 +717,44 @@ class Trainer(object):
             metric.clear()
 
         self.model.eval()
-        size_cnt = 0
         
-        with torch.no_grad():
-            dataset = list()
-            
-            for data in loader:    
-                size_cnt += 1
-                dataset.append(data)
-                
-                if size_cnt >= size: break
-                
+        with torch.no_grad():                            
             if run_type == "single_cuda":
-                ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_single_cuda(dataset))
-                preds, truths = self.do_single_cuda(dataset)
+                single_dataset, size_cnt = list(), 0
+                for data in loader:    
+                    size_cnt += 1
+                    single_dataset.append(data)
+                    
+                    if size_cnt >= size: break    
+                
+                ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_single_cuda(single_dataset))
+                preds, truths = self.do_single_cuda(single_dataset)
+                
             elif run_type == "multiple_cuda":
-                ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_multiple_cuda(dataset))
-                preds, truths = self.do_multiple_cuda(dataset)
+                multiple_dataset, size_cnt = dict(), 0
+                
+                multiple_dataset["rays_o"] = list()
+                multiple_dataset["rays_d"] = list()
+                multiple_dataset["images"] = list()
+                
+                for data in loader:    
+                    size_cnt += 1
+                    
+                    multiple_dataset["rays_o"].append(data["rays_o"])
+                    multiple_dataset["rays_d"].append(data["rays_d"])
+                    multiple_dataset["images"].append(data["images"])
+                    
+                    if size_cnt >= size: break   
+                
+                multiple_dataset["rays_o"] = torch.cat(multiple_dataset["rays_o"])
+                multiple_dataset["rays_d"] = torch.cat(multiple_dataset["rays_d"])
+                multiple_dataset["images"] = torch.cat(multiple_dataset["images"])
+                
+                torch.cuda.empty_cache()
+                gc.collect()
+                
+                ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_multiple_cuda(multiple_dataset))
+                preds, truths = self.do_multiple_cuda(multiple_dataset)
 
             for idx in range(len(preds)):
                 pred, truth = preds[idx], truths[idx]
