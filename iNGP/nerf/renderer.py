@@ -415,7 +415,7 @@ class NeRFRenderer(nn.Module):
             sigmas, rgbs = self(xyzs, dirs)
             sigmas = self.density_scale * sigmas
             
-            raymarching.composite_rays(n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh)
+            raymarching.single_triton_composite_rays(n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh)
             
             rays_alive = rays_alive[rays_alive >= 0]
             step += n_step

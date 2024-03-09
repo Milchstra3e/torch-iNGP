@@ -347,12 +347,33 @@ class _march_rays(Function):
 
 march_rays = _march_rays.apply
 
+class _composite_rays(Function):
+    @staticmethod
+    @custom_fwd(cast_inputs=torch.float32) # need to cast sigmas & rgbs to float
+    def forward(ctx, n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh=1e-2):
+        ''' composite rays' rgbs, according to the ray marching formula. (for inference)
+        Args:
+            n_alive: int, number of alive rays
+            n_step: int, how many steps we march
+            rays_alive: int, [n_alive], the alive rays' IDs in N (N >= n_alive)
+            rays_t: float, [N], the alive rays' time
+            sigmas: float, [n_alive * n_step,]
+            rgbs: float, [n_alive * n_step, 3]
+            deltas: float, [n_alive * n_step, 2], all generated points' deltas (here we record two deltas, the first is for RGB, the second for depth).
+        In-place Outputs:
+            weights_sum: float, [N,], the alpha channel
+            depth: float, [N,], the depth value
+            image: float, [N, 3], the RGB channel (after multiplying alpha!)
+        '''
+        _backend.composite_rays(n_alive, n_step, T_thresh, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image)
+        return tuple()
+
+composite_rays = _composite_rays.apply
+
 class _single_triton_march_rays(Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float32)
-    def forward(ctx, n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, bound, density_bitfield, C, H, near, far, align=-1, perturb=False, dt_gamma=0, max_steps=1024):
-        print("DEBUG: TRITON FORWARD CALL")
-        
+    def forward(ctx, n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, bound, density_bitfield, C, H, near, far, align=-1, perturb=False, dt_gamma=0, max_steps=1024):       
         if not rays_o.is_cuda: rays_o = rays_o.cuda()
         if not rays_d.is_cuda: rays_d = rays_d.cuda()
         
@@ -380,26 +401,11 @@ class _single_triton_march_rays(Function):
 
 single_triton_march_rays = _single_triton_march_rays.apply
 
-class _composite_rays(Function):
+class _single_triton_composite_rays(Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float32) # need to cast sigmas & rgbs to float
     def forward(ctx, n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh=1e-2):
-        ''' composite rays' rgbs, according to the ray marching formula. (for inference)
-        Args:
-            n_alive: int, number of alive rays
-            n_step: int, how many steps we march
-            rays_alive: int, [n_alive], the alive rays' IDs in N (N >= n_alive)
-            rays_t: float, [N], the alive rays' time
-            sigmas: float, [n_alive * n_step,]
-            rgbs: float, [n_alive * n_step, 3]
-            deltas: float, [n_alive * n_step, 2], all generated points' deltas (here we record two deltas, the first is for RGB, the second for depth).
-        In-place Outputs:
-            weights_sum: float, [N,], the alpha channel
-            depth: float, [N,], the depth value
-            image: float, [N, 3], the RGB channel (after multiplying alpha!)
-        '''
         _backend.composite_rays(n_alive, n_step, T_thresh, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image)
         return tuple()
 
-
-composite_rays = _composite_rays.apply
+single_triton_composite_rays = _single_triton_composite_rays.apply
