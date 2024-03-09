@@ -618,6 +618,11 @@ class Trainer(object):
         
         return preds, truths        
 
+    def do_multiple_triton(self, dataset):
+        preds, truths = list(), list()
+        
+        return preds, truths
+
     # moved out bg_color and perturb for more flexible control...
     def test_step(self, data, bg_color=None, perturb=False):  
 
@@ -713,9 +718,11 @@ class Trainer(object):
                 ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_single_cuda(dataset))
                 preds, truths = self.do_single_cuda(dataset)
             elif run_type == "single_triton":
-                pass
+                ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_single_triton(dataset))
+                preds, truths = self.do_single_triton(dataset)
             elif run_type == "multiple_triton":
-                pass
+                ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_multiple_triton(dataset))
+                preds, truths = self.do_multiple_triton(dataset)
 
             for idx in range(len(preds)):
                 pred, truth = preds[idx], truths[idx]
@@ -723,8 +730,9 @@ class Trainer(object):
                 for metric in self.metrics:
                     metric.update(pred, truth)
 
-        self.log(f"Average Time: {ms / 1000:0.2f}s, Min Time: {min_ms / 1000:0.2f}s, Max Time: {max_ms / 1000:0.2f}s", style="blue")
-        self.log(f"Average FPS: {size / (ms / 1000):0.2f}, Min FPS: {size / (min_ms / 1000):0.2f}, Max FPS: {size / (max_ms / 1000):0.2f}s", style="blue")
+        self.log(f"run_type: {run_type}")
+        self.log(f"Average Time: {ms / 1000:0.2f} s, Min Time: {min_ms / 1000:0.2f} s, Max Time: {max_ms / 1000:0.2f} s", style="blue")
+        self.log(f"Average FPS: {size / (ms / 1000):0.2f}, Min FPS: {size / (min_ms / 1000):0.2f}, Max FPS: {size / (max_ms / 1000):0.2f}", style="blue")
         for metric in self.metrics:
             self.log(metric.report(), style="blue")
             metric.clear()

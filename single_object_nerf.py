@@ -79,12 +79,12 @@ if __name__ == '__main__':
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    metrics = [PSNRMeter(), LPIPSMeter(device=device)]
+    metrics = [PSNRMeter(), ]
     trainer = Trainer('ngp', opt, model, device=device, workspace=opt.workspace, criterion=criterion, fp16=opt.fp16, metrics=metrics, use_checkpoint=opt.ckpt)
 
     test_loader = NeRFDataset(opt, device=device, type='test').dataloader()
 
     if test_loader.has_gt:
-        trainer.do_benchmark(128, "single_cuda", test_loader)
-
-    trainer.test(test_loader, write_video=False)
+        trainer.do_benchmark(1, "single_cuda", test_loader)
+        # trainer.do_benchmark(1, "single_triton", test_loader)
+        # trainer.do_benchmark(1, "multiple_triton", test_loader)
