@@ -85,6 +85,6 @@ if __name__ == '__main__':
     test_loader = NeRFDataset(opt, device=device, type='test').dataloader()
 
     if test_loader.has_gt:
-        trainer.evaluate(test_loader)
+        trainer.do_benchmark(128, "single_cuda", test_loader)
 
     trainer.test(test_loader, write_video=False)

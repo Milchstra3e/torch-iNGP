@@ -589,6 +589,35 @@ class Trainer(object):
 
         return pred_rgb, pred_depth, gt_rgb, loss
 
+    def do_single_cuda(self, dataset):
+        preds, truths = list(), list()
+        
+        for data in dataset:
+            rays_o = data['rays_o']
+            rays_d = data['rays_d']
+            images = data['images']
+            B, H, W, C = images.shape
+
+            bg_color = 1
+            if C == 4:
+                gt_rgb = images[..., :3] * images[..., 3:] + bg_color * (1 - images[..., 3:])
+            else:
+                gt_rgb = images
+            
+            outputs = self.model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=False, **vars(self.opt))
+
+            pred_rgb = outputs['image'].reshape(B, H, W, 3)
+            
+            preds.append(pred_rgb)
+            truths.append(gt_rgb)            
+
+        return preds, truths
+    
+    def do_single_triton(self, dataset):
+        preds, truths = list(), list()
+        
+        return preds, truths        
+
     # moved out bg_color and perturb for more flexible control...
     def test_step(self, data, bg_color=None, perturb=False):  
 
@@ -661,6 +690,44 @@ class Trainer(object):
         self.use_tensorboardX, use_tensorboardX = False, self.use_tensorboardX
         self.evaluate_one_epoch(loader, name)
         self.use_tensorboardX = use_tensorboardX
+
+    def do_benchmark(self, size, run_type, loader):
+        import triton
+        
+        for metric in self.metrics:
+            metric.clear()
+
+        self.model.eval()
+        size_cnt = 0
+        
+        with torch.no_grad():
+            dataset = list()
+            
+            for data in loader:    
+                size_cnt += 1
+                dataset.append(data)
+                
+                if size_cnt >= size: break
+                
+            if run_type == "single_cuda":
+                ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_single_cuda(dataset))
+                preds, truths = self.do_single_cuda(dataset)
+            elif run_type == "single_triton":
+                pass
+            elif run_type == "multiple_triton":
+                pass
+
+            for idx in range(len(preds)):
+                pred, truth = preds[idx], truths[idx]
+                
+                for metric in self.metrics:
+                    metric.update(pred, truth)
+
+        self.log(f"Average Time: {ms / 1000:0.2f}s, Min Time: {min_ms / 1000:0.2f}s, Max Time: {max_ms / 1000:0.2f}s", style="blue")
+        self.log(f"Average FPS: {size / (ms / 1000):0.2f}, Min FPS: {size / (min_ms / 1000):0.2f}, Max FPS: {size / (max_ms / 1000):0.2f}s", style="blue")
+        for metric in self.metrics:
+            self.log(metric.report(), style="blue")
+            metric.clear()
 
     def test(self, loader, save_path=None, name=None, write_video=True):
 
