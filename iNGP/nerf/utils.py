@@ -612,32 +612,8 @@ class Trainer(object):
             truths.append(gt_rgb)            
 
         return preds, truths
-    
-    def do_single_triton(self, dataset):
-        preds, truths = list(), list()
-        
-        for data in dataset:
-            rays_o = data['rays_o']
-            rays_d = data['rays_d']
-            images = data['images']
-            B, H, W, C = images.shape
 
-            bg_color = 1
-            if C == 4:
-                gt_rgb = images[..., :3] * images[..., 3:] + bg_color * (1 - images[..., 3:])
-            else:
-                gt_rgb = images
-            
-            output = self.model.render_single_triton(rays_o, rays_d, **vars(self.opt))
-
-            pred_rgb = output.reshape(B, H, W, 3)
-            
-            preds.append(pred_rgb)
-            truths.append(gt_rgb)
-        
-        return preds, truths        
-
-    def do_multiple_triton(self, dataset):
+    def do_multiple_cuda(self, dataset):
         preds, truths = list(), list()
         
         return preds, truths
@@ -736,12 +712,9 @@ class Trainer(object):
             if run_type == "single_cuda":
                 ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_single_cuda(dataset))
                 preds, truths = self.do_single_cuda(dataset)
-            elif run_type == "single_triton":
-                ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_single_triton(dataset))
-                preds, truths = self.do_single_triton(dataset)
-            elif run_type == "multiple_triton":
-                ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_multiple_triton(dataset))
-                preds, truths = self.do_multiple_triton(dataset)
+            elif run_type == "multiple_cuda":
+                ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_multiple_cuda(dataset))
+                preds, truths = self.do_multiple_cuda(dataset)
 
             for idx in range(len(preds)):
                 pred, truth = preds[idx], truths[idx]
