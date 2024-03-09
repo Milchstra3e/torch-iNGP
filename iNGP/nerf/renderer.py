@@ -376,6 +376,52 @@ class NeRFRenderer(nn.Module):
 
         return results
 
+    def run_multiple_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, force_all_rays=False, max_steps=1024, T_thresh=1e-4, **kwargs):        
+        prefix = rays_o.shape[:-1]
+        rays_o = rays_o.contiguous().view(-1, 3)
+        rays_d = rays_d.contiguous().view(-1, 3)
+
+        N = rays_o.shape[0]
+        device = rays_o.device
+
+        nears, fars = raymarching.near_far_from_aabb(rays_o, rays_d, self.aabb_train if self.training else self.aabb_infer, self.min_near)
+        bg_color = 1
+
+        dtype = torch.float32
+        
+        weights_sum = torch.zeros(N, dtype=dtype, device=device)
+        depth = torch.zeros(N, dtype=dtype, device=device)
+        image = torch.zeros(N, 3, dtype=dtype, device=device)
+        
+        n_alive = N
+        rays_alive = torch.arange(n_alive, dtype=torch.int32, device=device)
+        rays_t = nears.clone()
+
+        step = 0
+        while step < max_steps:
+            n_alive = rays_alive.shape[0]
+
+            if n_alive <= 0:
+                break
+
+            n_step = max(min(N // n_alive, 8), 1)
+
+            xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound, self.density_bitfield, self.cascade, self.grid_size, nears, fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
+
+            sigmas, rgbs = self(xyzs, dirs)
+            sigmas = self.density_scale * sigmas
+
+            raymarching.composite_rays(n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh)
+
+            rays_alive = rays_alive[rays_alive >= 0]
+
+            step += n_step
+
+        image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
+        image = image.view(*prefix, 3)
+
+        return image
+
     @torch.no_grad()
     def mark_untrained_grid(self, poses, intrinsic, S=64):
         # poses: [B, 4, 4]
@@ -573,8 +619,8 @@ class NeRFRenderer(nn.Module):
 
         return results
     
-    def render_single_triton(self, rays_o, rays_d, **kwargs):        
-        _run = self.run_single_triton        
+    def render_multiple_cuda(self, rays_o, rays_d, **kwargs):                
+        _run = self.run_multiple_cuda        
         results = _run(rays_o, rays_d, **kwargs)
         
         return results

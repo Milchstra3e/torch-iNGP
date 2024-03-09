@@ -613,8 +613,26 @@ class Trainer(object):
 
         return preds, truths
 
-    def do_multiple_cuda(self, dataset):
+    def do_multiple_cuda(self, dataset):        
         preds, truths = list(), list()
+        
+        for data in dataset:
+            rays_o = data['rays_o']
+            rays_d = data['rays_d']
+            images = data['images']
+            B, H, W, C = images.shape
+
+            bg_color = 1
+            if C == 4:
+                gt_rgb = images[..., :3] * images[..., 3:] + bg_color * (1 - images[..., 3:])
+            else:
+                gt_rgb = images
+            
+            outputs = self.model.render_multiple_cuda(rays_o, rays_d, **vars(self.opt))
+            pred_rgb = outputs.reshape(B, H, W, 3)
+            
+            preds.append(pred_rgb)
+            truths.append(gt_rgb)  
         
         return preds, truths
 

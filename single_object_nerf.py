@@ -86,4 +86,4 @@ if __name__ == '__main__':
 
     if test_loader.has_gt:
         trainer.do_benchmark(1, "single_cuda", test_loader)
-        # trainer.do_benchmark(1, "multiple_triton", test_loader)
+        trainer.do_benchmark(1, "multiple_cuda", test_loader)
