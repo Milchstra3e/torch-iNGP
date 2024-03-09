@@ -616,6 +616,25 @@ class Trainer(object):
     def do_single_triton(self, dataset):
         preds, truths = list(), list()
         
+        for data in dataset:
+            rays_o = data['rays_o']
+            rays_d = data['rays_d']
+            images = data['images']
+            B, H, W, C = images.shape
+
+            bg_color = 1
+            if C == 4:
+                gt_rgb = images[..., :3] * images[..., 3:] + bg_color * (1 - images[..., 3:])
+            else:
+                gt_rgb = images
+            
+            output = self.model.render_single_triton(rays_o, rays_d, **vars(self.opt))
+
+            pred_rgb = output.reshape(B, H, W, 3)
+            
+            preds.append(pred_rgb)
+            truths.append(gt_rgb)
+        
         return preds, truths        
 
     def do_multiple_triton(self, dataset):
@@ -730,7 +749,7 @@ class Trainer(object):
                 for metric in self.metrics:
                     metric.update(pred, truth)
 
-        self.log(f"run_type: {run_type}")
+        self.log(f"run_type: {run_type}", style="blue")
         self.log(f"Average Time: {ms / 1000:0.2f} s, Min Time: {min_ms / 1000:0.2f} s, Max Time: {max_ms / 1000:0.2f} s", style="blue")
         self.log(f"Average FPS: {size / (ms / 1000):0.2f}, Min FPS: {size / (min_ms / 1000):0.2f}, Max FPS: {size / (max_ms / 1000):0.2f}", style="blue")
         for metric in self.metrics:
