@@ -591,11 +591,13 @@ class Trainer(object):
 
     # moved out bg_color and perturb for more flexible control...
     def test_step(self, data, bg_color=None, perturb=False):  
-
         rays_o = data['rays_o'] # [B, N, 3]
         rays_d = data['rays_d'] # [B, N, 3]
         H, W = data['H'], data['W']
 
+        print("")
+        print(f"DEBUG: rays_o-{rays_o.shape}, rays_d-{rays_d.shape}, H-{H}, W-{W}")
+        
         if bg_color is not None:
             bg_color = bg_color.to(self.device)
 

@@ -319,7 +319,7 @@ class _march_rays(Function):
             dirs: float, [n_alive * n_step, 3], all generated points' view dirs.
             deltas: float, [n_alive * n_step, 2], all generated points' deltas (here we record two deltas, the first is for RGB, the second for depth).
         '''
-        
+                
         if not rays_o.is_cuda: rays_o = rays_o.cuda()
         if not rays_d.is_cuda: rays_d = rays_d.cuda()
         
@@ -330,6 +330,8 @@ class _march_rays(Function):
 
         if align > 0:
             M += align - (M % align)
+            
+        print(f"----DEBUG: align-{align}, M-{M}, n_alive * n_step-{n_alive * n_step}")
         
         xyzs = torch.zeros(M, 3, dtype=rays_o.dtype, device=rays_o.device)
         dirs = torch.zeros(M, 3, dtype=rays_o.dtype, device=rays_o.device)
@@ -340,6 +342,10 @@ class _march_rays(Function):
             noises = torch.rand(n_alive, dtype=rays_o.dtype, device=rays_o.device)
         else:
             noises = torch.zeros(n_alive, dtype=rays_o.dtype, device=rays_o.device)
+
+        print(f"----DEBUG: n_alive-{n_alive}, n_step-{n_step}, rays_alive-{rays_alive.shape}, rays_t-{rays_t.shape}, rays_o-{rays_o.shape}")
+        print(f"----DEBUG: bound-{bound}, dt_gamma-{dt_gamma}, max_steps-{max_steps}, C-{C}, H-{H}, density_bitfield-{density_bitfield.shape}")
+        print(f"----DEBUG: near-{near.shape}, far-{far.shape}, xyzs-{xyzs.shape}, dirs-{dirs.shape}, deltas-{deltas.shape}, noises-{noises.shape}")
 
         _backend.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, bound, dt_gamma, max_steps, C, H, density_bitfield, near, far, xyzs, dirs, deltas, noises)
 

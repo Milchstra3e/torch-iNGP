@@ -257,6 +257,9 @@ class NeRFRenderer(nn.Module):
         # rays_o, rays_d: [B, N, 3], assumes B == 1
         # return: image: [B, N, 3], depth: [B, N]
 
+        print(f"--DEBUG: rays_o-{rays_o.shape}, rays_d-{rays_d.shape}, dt_gamma-{dt_gamma}, bg_color-{bg_color}, perturb-{perturb}, force_all_rays-{force_all_rays}, max_steps-{max_steps}, T_thresh-{T_thresh}")
+        print(f"--DEBUG: kwargs-{kwargs}")
+
         prefix = rays_o.shape[:-1]
         rays_o = rays_o.contiguous().view(-1, 3)
         rays_d = rays_d.contiguous().view(-1, 3)
@@ -267,6 +270,8 @@ class NeRFRenderer(nn.Module):
         # pre-calculate near far
         nears, fars = raymarching.near_far_from_aabb(rays_o, rays_d, self.aabb_train if self.training else self.aabb_infer, self.min_near)
 
+        print(f"--DEBUG: nears-{nears.shape}, fars-{fars.shape}")
+        
         # mix background color
         if self.bg_radius > 0:
             # use the bg model to calculate bg_color
@@ -332,6 +337,9 @@ class NeRFRenderer(nn.Module):
             depth = torch.zeros(N, dtype=dtype, device=device)
             image = torch.zeros(N, 3, dtype=dtype, device=device)
             
+            print(f"--DEBUG: N-{N}")
+            print(f"--DEBUG: prefix-{prefix}")
+
             n_alive = N
             rays_alive = torch.arange(n_alive, dtype=torch.int32, device=device) # [N]
             rays_t = nears.clone() # [N]
@@ -347,12 +355,20 @@ class NeRFRenderer(nn.Module):
                 if n_alive <= 0:
                     break
 
-                # decide compact_steps
-                n_step = max(min(N // n_alive, 8), 1)
 
+                # decide compact_steps
+                n_step = max(min(N // n_alive, 8), 1) # load 를 N 에 맞추려고
+
+                print(f"--DEBUG: step-{step}, max_steps-{max_steps}, n_alive-{n_alive}, n_step-{n_step}, load_balance-{n_alive * n_step}/{N}")
+                
                 xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound, self.density_bitfield, self.cascade, self.grid_size, nears, fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
 
+                print(f"--DEBUG: xyzs-{xyzs.shape}, dirs-{dirs.shape}, deltas-{deltas.shape}")
+                
                 sigmas, rgbs = self(xyzs, dirs)
+                
+                print(f"--DEBUG: sigmas-{sigmas.shape}, rgbs-{rgbs.shape}, density_scale-{self.density_scale}")
+                
                 # density_outputs = self.density(xyzs) # [M,], use a dict since it may include extra things, like geo_feat for rgb.
                 # sigmas = density_outputs['sigma']
                 # rgbs = self.color(xyzs, dirs, **density_outputs)
@@ -370,6 +386,8 @@ class NeRFRenderer(nn.Module):
             depth = torch.clamp(depth - nears, min=0) / (fars - nears)
             image = image.view(*prefix, 3)
             depth = depth.view(*prefix)
+            
+            print(f"--DEBUG: image-{image.shape}")
         
         results['depth'] = depth
         results['image'] = image

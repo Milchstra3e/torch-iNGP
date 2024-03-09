@@ -51,6 +51,9 @@ class _grid_encode(Function):
         else:
             dy_dx = None
 
+        print(f"------DEBUG: inputs-{inputs.shape}, embeddings-{embeddings.shape}, offsets-{offsets.shape}, outputs-{outputs.shape}")
+        print(f"------DEBUG: B-{B}, D-{D}, C-{C}, L-{L}, S-{S}, H-{H}, grid_type-{gridtype}, align_corners-{align_corners}, interpolation-{interpolation}")
+
         _backend.grid_encode_forward(inputs, embeddings, offsets, outputs, B, D, C, L, S, H, dy_dx, gridtype, align_corners, interpolation)
 
         # permute back to [B, L * C]
