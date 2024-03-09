@@ -1,8 +1,9 @@
 import torch
 import argparse
 
-from nerf.provider import NeRFDataset
-from nerf.utils import *
+from src.nerf.provider import NeRFDataset
+from src.nerf.utils import *
+from src.nerf.network import NeRFNetwork
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -61,7 +62,6 @@ if __name__ == '__main__':
         opt.fp16 = True
         opt.cuda_ray = True
         opt.preload = True
-        from nerf.network_ff import NeRFNetwork
 
     seed_everything(opt.seed)
 
