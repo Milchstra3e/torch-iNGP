@@ -254,129 +254,6 @@ class NeRFRenderer(nn.Module):
 
 
     def run_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, force_all_rays=False, max_steps=1024, T_thresh=1e-4, **kwargs):
-        # rays_o, rays_d: [B, N, 3], assumes B == 1
-        # return: image: [B, N, 3], depth: [B, N]
-
-        prefix = rays_o.shape[:-1]
-        rays_o = rays_o.contiguous().view(-1, 3)
-        rays_d = rays_d.contiguous().view(-1, 3)
-
-        N = rays_o.shape[0] # N = B * N, in fact
-        device = rays_o.device
-
-        # pre-calculate near far
-        nears, fars = raymarching.near_far_from_aabb(rays_o, rays_d, self.aabb_train if self.training else self.aabb_infer, self.min_near)
-
-        # mix background color
-        if self.bg_radius > 0:
-            # use the bg model to calculate bg_color
-            sph = raymarching.sph_from_ray(rays_o, rays_d, self.bg_radius) # [N, 2] in [-1, 1]
-            bg_color = self.background(sph, rays_d) # [N, 3]
-        elif bg_color is None:
-            bg_color = 1
-
-        results = {}
-
-        if self.training:
-            # setup counter
-            counter = self.step_counter[self.local_step % 16]
-            counter.zero_() # set to 0
-            self.local_step += 1
-
-            xyzs, dirs, deltas, rays = raymarching.march_rays_train(rays_o, rays_d, self.bound, self.density_bitfield, self.cascade, self.grid_size, nears, fars, counter, self.mean_count, perturb, 128, force_all_rays, dt_gamma, max_steps)
-
-            #plot_pointcloud(xyzs.reshape(-1, 3).detach().cpu().numpy())
-            
-            sigmas, rgbs = self(xyzs, dirs)
-            # density_outputs = self.density(xyzs) # [M,], use a dict since it may include extra things, like geo_feat for rgb.
-            # sigmas = density_outputs['sigma']
-            # rgbs = self.color(xyzs, dirs, **density_outputs)
-            sigmas = self.density_scale * sigmas
-
-            #print(f'valid RGB query ratio: {mask.sum().item() / mask.shape[0]} (total = {mask.sum().item()})')
-
-            # special case for CCNeRF's residual learning
-            if len(sigmas.shape) == 2:
-                K = sigmas.shape[0]
-                depths = []
-                images = []
-                for k in range(K):
-                    weights_sum, depth, image = raymarching.composite_rays_train(sigmas[k], rgbs[k], deltas, rays, T_thresh)
-                    image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
-                    depth = torch.clamp(depth - nears, min=0) / (fars - nears)
-                    images.append(image.view(*prefix, 3))
-                    depths.append(depth.view(*prefix))
-            
-                depth = torch.stack(depths, axis=0) # [K, B, N]
-                image = torch.stack(images, axis=0) # [K, B, N, 3]
-
-            else:
-
-                weights_sum, depth, image = raymarching.composite_rays_train(sigmas, rgbs, deltas, rays, T_thresh)
-                image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
-                depth = torch.clamp(depth - nears, min=0) / (fars - nears)
-                image = image.view(*prefix, 3)
-                depth = depth.view(*prefix)
-            
-            results['weights_sum'] = weights_sum
-
-        else:
-           
-            # allocate outputs 
-            # if use autocast, must init as half so it won't be autocasted and lose reference.
-            #dtype = torch.half if torch.is_autocast_enabled() else torch.float32
-            # output should always be float32! only network inference uses half.
-            dtype = torch.float32
-            
-            weights_sum = torch.zeros(N, dtype=dtype, device=device)
-            depth = torch.zeros(N, dtype=dtype, device=device)
-            image = torch.zeros(N, 3, dtype=dtype, device=device)
-            
-            n_alive = N
-            rays_alive = torch.arange(n_alive, dtype=torch.int32, device=device) # [N]
-            rays_t = nears.clone() # [N]
-
-            step = 0
-            
-            while step < max_steps:
-
-                # count alive rays 
-                n_alive = rays_alive.shape[0]
-                
-                # exit loop
-                if n_alive <= 0:
-                    break
-
-                # decide compact_steps
-                n_step = max(min(N // n_alive, 8), 1)
-
-                xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound, self.density_bitfield, self.cascade, self.grid_size, nears, fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
-
-                sigmas, rgbs = self(xyzs, dirs)
-                # density_outputs = self.density(xyzs) # [M,], use a dict since it may include extra things, like geo_feat for rgb.
-                # sigmas = density_outputs['sigma']
-                # rgbs = self.color(xyzs, dirs, **density_outputs)
-                sigmas = self.density_scale * sigmas
-
-                raymarching.composite_rays(n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh)
-
-                rays_alive = rays_alive[rays_alive >= 0]
-
-                #print(f'step = {step}, n_step = {n_step}, n_alive = {n_alive}, xyzs: {xyzs.shape}')
-
-                step += n_step
-
-            image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
-            depth = torch.clamp(depth - nears, min=0) / (fars - nears)
-            image = image.view(*prefix, 3)
-            depth = depth.view(*prefix)
-        
-        results['depth'] = depth
-        results['image'] = image
-
-        return results
-
-    def run_multiple_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, force_all_rays=False, max_steps=1024, T_thresh=1e-4, **kwargs):        
         prefix = rays_o.shape[:-1]
         rays_o = rays_o.contiguous().view(-1, 3)
         rays_d = rays_d.contiguous().view(-1, 3)
@@ -385,7 +262,12 @@ class NeRFRenderer(nn.Module):
         device = rays_o.device
 
         nears, fars = raymarching.near_far_from_aabb(rays_o, rays_d, self.aabb_train if self.training else self.aabb_infer, self.min_near)
-        bg_color = 1
+
+        if self.bg_radius > 0:
+            sph = raymarching.sph_from_ray(rays_o, rays_d, self.bg_radius)
+            bg_color = self.background(sph, rays_d)
+        elif bg_color is None:
+            bg_color = 1
 
         dtype = torch.float32
         
@@ -398,9 +280,62 @@ class NeRFRenderer(nn.Module):
         rays_t = nears.clone()
 
         step = 0
+        
         while step < max_steps:
             n_alive = rays_alive.shape[0]
+            
+            if n_alive <= 0:
+                break
 
+            n_step = max(min(N // n_alive, 8), 1)
+
+            xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound, self.density_bitfield, self.cascade, self.grid_size, nears, fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
+
+            sigmas, rgbs = self(xyzs, dirs)
+            sigmas = self.density_scale * sigmas
+
+            raymarching.composite_rays(n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh)
+
+            rays_alive = rays_alive[rays_alive >= 0]
+
+            step += n_step
+
+        image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
+        image = image.view(*prefix, 3)
+
+        return image
+
+    def run_multiple_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, force_all_rays=False, max_steps=1024, T_thresh=1e-4, **kwargs):        
+        prefix = rays_o.shape[:-1]
+        rays_o = rays_o.contiguous().view(-1, 3)
+        rays_d = rays_d.contiguous().view(-1, 3)
+
+        N = rays_o.shape[0]
+        device = rays_o.device
+
+        nears, fars = raymarching.near_far_from_aabb(rays_o, rays_d, self.aabb_train if self.training else self.aabb_infer, self.min_near)
+
+        if self.bg_radius > 0:
+            sph = raymarching.sph_from_ray(rays_o, rays_d, self.bg_radius)
+            bg_color = self.background(sph, rays_d)
+        elif bg_color is None:
+            bg_color = 1
+
+        dtype = torch.float32
+        
+        weights_sum = torch.zeros(N, dtype=dtype, device=device)
+        depth = torch.zeros(N, dtype=dtype, device=device)
+        image = torch.zeros(N, 3, dtype=dtype, device=device)
+        
+        n_alive = N
+        rays_alive = torch.arange(n_alive, dtype=torch.int32, device=device)
+        rays_t = nears.clone()
+
+        step = 0
+        
+        while step < max_steps:
+            n_alive = rays_alive.shape[0]
+            
             if n_alive <= 0:
                 break
 
@@ -584,38 +519,9 @@ class NeRFRenderer(nn.Module):
         #print(f'[density grid] min={self.density_grid.min().item():.4f}, max={self.density_grid.max().item():.4f}, mean={self.mean_density:.4f}, occ_rate={(self.density_grid > 0.01).sum() / (128**3 * self.cascade):.3f} | [step counter] mean={self.mean_count}')
 
 
-    def render(self, rays_o, rays_d, staged=False, max_ray_batch=4096, **kwargs):
-        # rays_o, rays_d: [B, N, 3], assumes B == 1
-        # return: pred_rgb: [B, N, 3]
-
-        if self.cuda_ray:
-            _run = self.run_cuda
-        else:
-            _run = self.run
-
-        B, N = rays_o.shape[:2]
-        device = rays_o.device
-
-        # never stage when cuda_ray
-        if staged and not self.cuda_ray:
-            depth = torch.empty((B, N), device=device)
-            image = torch.empty((B, N, 3), device=device)
-
-            for b in range(B):
-                head = 0
-                while head < N:
-                    tail = min(head + max_ray_batch, N)
-                    results_ = _run(rays_o[b:b+1, head:tail], rays_d[b:b+1, head:tail], **kwargs)
-                    depth[b:b+1, head:tail] = results_['depth']
-                    image[b:b+1, head:tail] = results_['image']
-                    head += max_ray_batch
-            
-            results = {}
-            results['depth'] = depth
-            results['image'] = image
-
-        else:
-            results = _run(rays_o, rays_d, **kwargs)
+    def render(self, rays_o, rays_d, **kwargs):
+        _run = self.run_cuda
+        results = _run(rays_o, rays_d, **kwargs)
 
         return results
     

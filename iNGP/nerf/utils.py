@@ -604,9 +604,9 @@ class Trainer(object):
             else:
                 gt_rgb = images
             
-            outputs = self.model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=False, **vars(self.opt))
+            outputs = self.model.render(rays_o, rays_d, **vars(self.opt))
 
-            pred_rgb = outputs['image'].reshape(B, H, W, 3)
+            pred_rgb = outputs.reshape(B, H, W, 3)
             
             preds.append(pred_rgb)
             truths.append(gt_rgb)            
@@ -629,6 +629,7 @@ class Trainer(object):
                 gt_rgb = images
             
             outputs = self.model.render_multiple_cuda(rays_o, rays_d, **vars(self.opt))
+            
             pred_rgb = outputs.reshape(B, H, W, 3)
             
             preds.append(pred_rgb)
