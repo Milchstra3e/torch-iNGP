@@ -376,9 +376,7 @@ class NeRFRenderer(nn.Module):
 
         return results
 
-    def run_single_triton(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, force_all_rays=False, max_steps=1024, T_thresh=1e-4, **kwargs):
-        print("DEBUG: TRITON CALL")
-        
+    def run_single_triton(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, force_all_rays=False, max_steps=1024, T_thresh=1e-4, **kwargs):       
         prefix = rays_o.shape[:-1]
         rays_o = rays_o.contiguous().view(-1, 3)
         rays_d = rays_d.contiguous().view(-1, 3)
@@ -412,7 +410,7 @@ class NeRFRenderer(nn.Module):
 
             n_step = max(min(N // n_alive, 8), 1)
 
-            xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound, self.density_bitfield, self.cascade, self.grid_size, nears, fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
+            xyzs, dirs, deltas = raymarching.single_triton_march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound, self.density_bitfield, self.cascade, self.grid_size, nears, fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
 
             sigmas, rgbs = self(xyzs, dirs)
             sigmas = self.density_scale * sigmas

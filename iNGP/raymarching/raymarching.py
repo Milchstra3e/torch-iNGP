@@ -347,6 +347,38 @@ class _march_rays(Function):
 
 march_rays = _march_rays.apply
 
+class _single_triton_march_rays(Function):
+    @staticmethod
+    @custom_fwd(cast_inputs=torch.float32)
+    def forward(ctx, n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, bound, density_bitfield, C, H, near, far, align=-1, perturb=False, dt_gamma=0, max_steps=1024):
+        print("DEBUG: TRITON FORWARD CALL")
+        
+        if not rays_o.is_cuda: rays_o = rays_o.cuda()
+        if not rays_d.is_cuda: rays_d = rays_d.cuda()
+        
+        rays_o = rays_o.contiguous().view(-1, 3)
+        rays_d = rays_d.contiguous().view(-1, 3)
+
+        M = n_alive * n_step
+
+        if align > 0:
+            M += align - (M % align)
+        
+        xyzs = torch.zeros(M, 3, dtype=rays_o.dtype, device=rays_o.device)
+        dirs = torch.zeros(M, 3, dtype=rays_o.dtype, device=rays_o.device)
+        deltas = torch.zeros(M, 2, dtype=rays_o.dtype, device=rays_o.device) # 2 vals, one for rgb, one for depth
+
+        if perturb:
+            # torch.manual_seed(perturb) # test_gui uses spp index as seed
+            noises = torch.rand(n_alive, dtype=rays_o.dtype, device=rays_o.device)
+        else:
+            noises = torch.zeros(n_alive, dtype=rays_o.dtype, device=rays_o.device)
+
+        _backend.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, bound, dt_gamma, max_steps, C, H, density_bitfield, near, far, xyzs, dirs, deltas, noises)
+
+        return xyzs, dirs, deltas
+
+single_triton_march_rays = _single_triton_march_rays.apply
 
 class _composite_rays(Function):
     @staticmethod
