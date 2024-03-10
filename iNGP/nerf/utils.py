@@ -614,9 +614,7 @@ class Trainer(object):
 
         return preds, truths
 
-    def do_multiple_cuda(self, dataset):        
-        preds, truths = list(), list()
-                        
+    def do_multiple_cuda(self, dataset):                                
         rays_o = dataset["rays_o"]
         rays_d = dataset["rays_d"]
         images = dataset["images"]            
@@ -632,10 +630,7 @@ class Trainer(object):
         
         pred_rgb = outputs.reshape(B, H, W, 3)
         
-        preds.append(pred_rgb)
-        truths.append(gt_rgb)
-        
-        return preds, truths
+        return pred_rgb, gt_rgb
 
     # moved out bg_color and perturb for more flexible control...
     def test_step(self, data, bg_color=None, perturb=False):  
@@ -730,6 +725,12 @@ class Trainer(object):
                 ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_single_cuda(single_dataset))
                 preds, truths = self.do_single_cuda(single_dataset)
                 
+                for idx in range(len(preds)):
+                    pred, truth = preds[idx], truths[idx]
+                    
+                    for metric in self.metrics:
+                        metric.update(pred, truth)
+                
             elif run_type == "multiple_cuda":
                 multiple_dataset, size_cnt = dict(), 0
                 
@@ -755,12 +756,12 @@ class Trainer(object):
                 
                 ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_multiple_cuda(multiple_dataset))
                 preds, truths = self.do_multiple_cuda(multiple_dataset)
-
-            for idx in range(len(preds)):
-                pred, truth = preds[idx], truths[idx]
                 
-                for metric in self.metrics:
-                    metric.update(pred, truth)
+                for idx in range(preds.shape[0]):
+                    pred, truth = preds[idx,:], truths[idx,:]
+                    
+                    for metric in self.metrics:
+                        metric.update(pred, truth)
 
         self.log(f"run_type: {run_type}", style="blue")
         self.log(f"Average Time: {ms / 1000:0.2f} s, Min Time: {min_ms / 1000:0.2f} s, Max Time: {max_ms / 1000:0.2f} s", style="blue")
