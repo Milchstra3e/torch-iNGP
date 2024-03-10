@@ -48,6 +48,38 @@ class _near_far_from_aabb(Function):
 
 near_far_from_aabb = _near_far_from_aabb.apply
 
+class _near_far_from_aabb_2(Function):
+    @staticmethod
+    @custom_fwd(cast_inputs=torch.float32)
+    def forward(ctx, rays_o, rays_d, aabb, min_near=0.2, group_grid_cnt = 4, group_grid_idx=0):
+        ''' near_far_from_aabb, CUDA implementation
+        Calculate rays' intersection time (near and far) with aabb
+        Args:
+            rays_o: float, [N, 3]
+            rays_d: float, [N, 3]
+            aabb: float, [6], (xmin, ymin, zmin, xmax, ymax, zmax)
+            min_near: float, scalar
+        Returns:
+            nears: float, [N]
+            fars: float, [N]
+        '''
+        if not rays_o.is_cuda: rays_o = rays_o.cuda()
+        if not rays_d.is_cuda: rays_d = rays_d.cuda()
+
+        rays_o = rays_o.contiguous().view(-1, 3)
+        rays_d = rays_d.contiguous().view(-1, 3)
+
+        N = rays_o.shape[0] # num rays
+
+        nears = torch.empty(N, dtype=rays_o.dtype, device=rays_o.device)
+        fars = torch.empty(N, dtype=rays_o.dtype, device=rays_o.device)
+
+        _backend.near_far_from_aabb_2(rays_o, rays_d, aabb, N, min_near, group_grid_cnt, group_grid_idx, nears, fars)
+
+        return nears, fars
+
+near_far_from_aabb_2 = _near_far_from_aabb_2.apply
+
 
 class _sph_from_ray(Function):
     @staticmethod

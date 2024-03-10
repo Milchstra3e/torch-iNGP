@@ -56,6 +56,8 @@ if __name__ == '__main__':
     parser.add_argument('--error_map', action='store_true', help="use error map to sample rays")
     parser.add_argument('--clip_text', type=str, default='', help="text input for CLIP guidance")
     parser.add_argument('--rand_pose', type=int, default=-1, help="<0 uses no rand pose, =0 only uses rand pose, >0 sample one rand pose every $ known poses")
+    parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--run_type', type=str, default="single_cuda")
 
     opt = parser.parse_args()
 
@@ -85,12 +87,5 @@ if __name__ == '__main__':
 
     test_loader = NeRFDataset(opt, device=device, type='test').dataloader()
 
-    size = 8
-
     if test_loader.has_gt:        
-        trainer.do_benchmark(size, "single_cuda", test_loader)
-        
-        torch.cuda.empty_cache()
-        gc.collect()
-        
-        trainer.do_benchmark(size, "multiple_cuda", test_loader)
+        trainer.do_benchmark(opt.batch_size, opt.run_type, test_loader)

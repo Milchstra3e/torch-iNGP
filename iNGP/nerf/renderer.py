@@ -253,7 +253,7 @@ class NeRFRenderer(nn.Module):
         }
 
 
-    def run_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, force_all_rays=False, max_steps=1024, T_thresh=1e-4, **kwargs):
+    def run_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, force_all_rays=False, max_steps=1024, T_thresh=0, **kwargs):
         prefix = rays_o.shape[:-1]
         rays_o = rays_o.contiguous().view(-1, 3)
         rays_d = rays_d.contiguous().view(-1, 3)
@@ -305,51 +305,56 @@ class NeRFRenderer(nn.Module):
 
         return image
 
-    def run_multiple_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, max_steps=1024, T_thresh=1e-4, **kwargs):                
+    def run_multiple_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, max_steps=1024, T_thresh=0, **kwargs):                
+        BIG_NUMBER = 2 ** 24
+        
+        group_grid_cnt = 1
+        device = rays_o.device
+        bg_color = 1
+        dtype = torch.float32
+
+        B, N = rays_o.shape[0], rays_o.shape[1]
+        BN = B * N
+        
         prefix = rays_o.shape[:-1]
         rays_o = rays_o.contiguous().view(-1, 3)
         rays_d = rays_d.contiguous().view(-1, 3)
 
-        N = rays_o.shape[0]
-        device = rays_o.device
-
-        nears, fars = raymarching.near_far_from_aabb(rays_o, rays_d, self.aabb_train if self.training else self.aabb_infer, self.min_near)
-
-        bg_color = 1
-
-        dtype = torch.float32
+        weights_sum = torch.zeros(BN, dtype=dtype, device=device)
+        depth = torch.zeros(BN, dtype=dtype, device=device)
+        image = torch.zeros(BN, 3, dtype=dtype, device=device)
         
-        weights_sum = torch.zeros(N, dtype=dtype, device=device)
-        depth = torch.zeros(N, dtype=dtype, device=device)
-        image = torch.zeros(N, 3, dtype=dtype, device=device)
-        
-        n_alive = N
-        rays_alive = torch.arange(n_alive, dtype=torch.int32, device=device)
-        rays_t = nears.clone()
+        for group_grid_idx in range(group_grid_cnt ** 3):
+            nears, fars = raymarching.near_far_from_aabb_2(rays_o, rays_d, self.aabb_infer, self.min_near, group_grid_cnt, group_grid_idx)
+            mask = nears >= BIG_NUMBER
+                        
+            n_alive = BN
+            rays_alive = torch.arange(n_alive, dtype=torch.int32, device=device)
+            rays_alive[mask] = -1
+            rays_t = nears.clone()
 
-        step = 0
-        
-        while step < max_steps:
-            n_alive = rays_alive.shape[0]
+            step = 0
             
-            if n_alive <= 0:
-                break
+            while step < max_steps:
+                rays_alive = rays_alive[rays_alive >= 0]
+                n_alive = rays_alive.shape[0]
+                
+                if n_alive <= 0:
+                    break
 
-            n_step = max(min(N // n_alive, 8), 1)
+                n_step = max(min(BN // n_alive, 8), 1)
 
-            xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound, self.density_bitfield, self.cascade, self.grid_size, nears, fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
+                xyzs, dirs, deltas = raymarching.march_rays(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound, self.density_bitfield, self.cascade, self.grid_size, nears, fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
 
-            sigmas, rgbs = self(xyzs, dirs)
-            sigmas = self.density_scale * sigmas
+                sigmas, rgbs = self(xyzs, dirs)
+                sigmas = self.density_scale * sigmas
 
-            raymarching.composite_rays(n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh)
+                raymarching.composite_rays(n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh)
 
-            rays_alive = rays_alive[rays_alive >= 0]
+                step += n_step
 
-            step += n_step
-
-        image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
-        image = image.view(*prefix, 3)
+            image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
+            image = image.view(*prefix, 3)
 
         return image
 
