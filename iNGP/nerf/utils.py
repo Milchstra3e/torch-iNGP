@@ -708,6 +708,10 @@ class Trainer(object):
     def do_benchmark(self, size, run_type, loader):
         import triton
         
+        def clear():
+            torch.cuda.empty_cache()
+            gc.collect()  
+        
         for metric in self.metrics:
             metric.clear()
 
@@ -751,10 +755,9 @@ class Trainer(object):
                 multiple_dataset["rays_d"] = torch.cat(multiple_dataset["rays_d"])
                 multiple_dataset["images"] = torch.cat(multiple_dataset["images"])
                 
-                torch.cuda.empty_cache()
-                gc.collect()
-                
+                clear()                
                 ms, min_ms, max_ms = triton.testing.do_bench(lambda: self.do_multiple_cuda(multiple_dataset))
+                clear()
                 preds, truths = self.do_multiple_cuda(multiple_dataset)
                 
                 for idx in range(preds.shape[0]):
