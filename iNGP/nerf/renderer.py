@@ -305,7 +305,7 @@ class NeRFRenderer(nn.Module):
 
         return image
 
-    def run_multiple_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, force_all_rays=False, max_steps=1024, T_thresh=1e-4, **kwargs):        
+    def run_multiple_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, max_steps=1024, T_thresh=1e-4, **kwargs):                
         prefix = rays_o.shape[:-1]
         rays_o = rays_o.contiguous().view(-1, 3)
         rays_d = rays_d.contiguous().view(-1, 3)
@@ -315,11 +315,7 @@ class NeRFRenderer(nn.Module):
 
         nears, fars = raymarching.near_far_from_aabb(rays_o, rays_d, self.aabb_train if self.training else self.aabb_infer, self.min_near)
 
-        if self.bg_radius > 0:
-            sph = raymarching.sph_from_ray(rays_o, rays_d, self.bg_radius)
-            bg_color = self.background(sph, rays_d)
-        elif bg_color is None:
-            bg_color = 1
+        bg_color = 1
 
         dtype = torch.float32
         
