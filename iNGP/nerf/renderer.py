@@ -353,8 +353,8 @@ class NeRFRenderer(nn.Module):
 
                 step += n_step
 
-            image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
-            image = image.view(*prefix, 3)
+        image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
+        image = image.view(*prefix, 3)
 
         return image
 
