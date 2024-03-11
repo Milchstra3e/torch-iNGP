@@ -16,5 +16,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("composite_rays_train_backward", &composite_rays_train_backward, "composite_rays_train_backward (CUDA)");
     // infer
     m.def("march_rays", &march_rays, "march rays (CUDA)");
+    m.def("march_rays_2", &march_rays_2, "march rays_2 (CUDA)");
     m.def("composite_rays", &composite_rays, "composite rays (CUDA)");
+    m.def("composite_rays_2", &composite_rays_2, "composite rays_2 (CUDA)");
 }

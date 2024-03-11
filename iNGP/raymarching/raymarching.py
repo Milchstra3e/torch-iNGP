@@ -379,6 +379,60 @@ class _march_rays(Function):
 
 march_rays = _march_rays.apply
 
+
+class _march_rays_2(Function):
+    @staticmethod
+    @custom_fwd(cast_inputs=torch.float32)
+    def forward(ctx, n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, bound, density_bitfield, C, H, near, far, align=-1, perturb=False, dt_gamma=0, max_steps=1024):
+        ''' march rays to generate points (forward only, for inference)
+        Args:
+            n_alive: int, number of alive rays
+            n_step: int, how many steps we march
+            rays_alive: int, [N], the alive rays' IDs in N (N >= n_alive, but we only use first n_alive)
+            rays_t: float, [N], the alive rays' time, we only use the first n_alive.
+            rays_o/d: float, [N, 3]
+            bound: float, scalar
+            density_bitfield: uint8: [CHHH // 8]
+            C: int
+            H: int
+            nears/fars: float, [N]
+            align: int, pad output so its size is dividable by align, set to -1 to disable.
+            perturb: bool/int, int > 0 is used as the random seed.
+            dt_gamma: float, called cone_angle in instant-ngp, exponentially accelerate ray marching if > 0. (very significant effect, but generally lead to worse performance)
+            max_steps: int, max number of sampled points along each ray, also affect min_stepsize.
+        Returns:
+            xyzs: float, [n_alive * n_step, 3], all generated points' coords
+            dirs: float, [n_alive * n_step, 3], all generated points' view dirs.
+            deltas: float, [n_alive * n_step, 2], all generated points' deltas (here we record two deltas, the first is for RGB, the second for depth).
+        '''
+        
+        if not rays_o.is_cuda: rays_o = rays_o.cuda()
+        if not rays_d.is_cuda: rays_d = rays_d.cuda()
+        
+        rays_o = rays_o.contiguous().view(-1, 3)
+        rays_d = rays_d.contiguous().view(-1, 3)
+
+        M = n_alive * n_step
+
+        if align > 0:
+            M += align - (M % align)
+        
+        xyzs = torch.zeros(M, 3, dtype=rays_o.dtype, device=rays_o.device)
+        dirs = torch.zeros(M, 3, dtype=rays_o.dtype, device=rays_o.device)
+        deltas = torch.zeros(M, 2, dtype=rays_o.dtype, device=rays_o.device) # 2 vals, one for rgb, one for depth
+
+        if perturb:
+            # torch.manual_seed(perturb) # test_gui uses spp index as seed
+            noises = torch.rand(n_alive, dtype=rays_o.dtype, device=rays_o.device)
+        else:
+            noises = torch.zeros(n_alive, dtype=rays_o.dtype, device=rays_o.device)
+
+        _backend.march_rays_2(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, bound, dt_gamma, max_steps, C, H, density_bitfield, near, far, xyzs, dirs, deltas, noises)
+
+        return xyzs, dirs, deltas
+
+march_rays_2 = _march_rays_2.apply
+
 class _composite_rays(Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float32) # need to cast sigmas & rgbs to float
@@ -401,3 +455,26 @@ class _composite_rays(Function):
         return tuple()
 
 composite_rays = _composite_rays.apply
+
+class _composite_rays_2(Function):
+    @staticmethod
+    @custom_fwd(cast_inputs=torch.float32) # need to cast sigmas & rgbs to float
+    def forward(ctx, n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh=1e-2):
+        ''' composite rays' rgbs, according to the ray marching formula. (for inference)
+        Args:
+            n_alive: int, number of alive rays
+            n_step: int, how many steps we march
+            rays_alive: int, [n_alive], the alive rays' IDs in N (N >= n_alive)
+            rays_t: float, [N], the alive rays' time
+            sigmas: float, [n_alive * n_step,]
+            rgbs: float, [n_alive * n_step, 3]
+            deltas: float, [n_alive * n_step, 2], all generated points' deltas (here we record two deltas, the first is for RGB, the second for depth).
+        In-place Outputs:
+            weights_sum: float, [N,], the alpha channel
+            depth: float, [N,], the depth value
+            image: float, [N, 3], the RGB channel (after multiplying alpha!)
+        '''
+        _backend.composite_rays_2(n_alive, n_step, T_thresh, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image)
+        return tuple()
+
+composite_rays_2 = _composite_rays_2.apply
