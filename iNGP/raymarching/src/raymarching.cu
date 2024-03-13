@@ -153,7 +153,7 @@ __global__ void kernel_near_far_from_aabb_2(
     const float min_near,
     const uint32_t group_grid_cnt,
     const uint32_t group_grid_idx,
-    scalar_t * nears, scalar_t * fars
+    scalar_t * nears, scalar_t * fars, scalar_t * max_nears
 ) {
     // parallel per ray
     const uint32_t n = threadIdx.x + blockIdx.x * blockDim.x;
@@ -213,6 +213,7 @@ __global__ void kernel_near_far_from_aabb_2(
 
     nears[n] = near;
     fars[n] = far;
+    max_nears[n] = fmaxf(max_nears[n], near);
 }
 
 void near_far_from_aabb(const at::Tensor rays_o, const at::Tensor rays_d, const at::Tensor aabb, const uint32_t N, const float min_near, at::Tensor nears, at::Tensor fars) {
@@ -225,13 +226,13 @@ void near_far_from_aabb(const at::Tensor rays_o, const at::Tensor rays_d, const 
     }));
 }
 
-void near_far_from_aabb_2(const at::Tensor rays_o, const at::Tensor rays_d, const at::Tensor aabb, const uint32_t N, const float min_near, const uint32_t group_grid_cnt, const uint32_t group_grid_idx, at::Tensor nears, at::Tensor fars) {
+void near_far_from_aabb_2(const at::Tensor rays_o, const at::Tensor rays_d, const at::Tensor aabb, const uint32_t N, const float min_near, const uint32_t group_grid_cnt, const uint32_t group_grid_idx, at::Tensor nears, at::Tensor fars, at::Tensor max_nears) {
 
     static constexpr uint32_t N_THREAD = 128;
 
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
     rays_o.scalar_type(), "near_far_from_aabb_2", ([&] {
-        kernel_near_far_from_aabb_2<<<div_round_up(N, N_THREAD), N_THREAD>>>(rays_o.data_ptr<scalar_t>(), rays_d.data_ptr<scalar_t>(), aabb.data_ptr<scalar_t>(), N, min_near, group_grid_cnt, group_grid_idx, nears.data_ptr<scalar_t>(), fars.data_ptr<scalar_t>());
+        kernel_near_far_from_aabb_2<<<div_round_up(N, N_THREAD), N_THREAD>>>(rays_o.data_ptr<scalar_t>(), rays_d.data_ptr<scalar_t>(), aabb.data_ptr<scalar_t>(), N, min_near, group_grid_cnt, group_grid_idx, nears.data_ptr<scalar_t>(), fars.data_ptr<scalar_t>(), max_nears.data_ptr<scalar_t>());
     }));
 }
 
@@ -1118,7 +1119,7 @@ __global__ void kernel_composite_rays_2(
     const scalar_t* __restrict__ sigmas, 
     const scalar_t* __restrict__ rgbs, 
     const scalar_t* __restrict__ deltas, 
-    scalar_t* weights_sum, scalar_t* depth, scalar_t* image
+    scalar_t* weights_sum, scalar_t* depth, scalar_t* image, scalar_t* max_nears
 ) {
     const uint32_t n = threadIdx.x + blockIdx.x * blockDim.x;
     if (n >= n_alive) return;
@@ -1133,8 +1134,10 @@ __global__ void kernel_composite_rays_2(
     weights_sum += index;
     depth += index;
     image += index * 3;
+    max_nears += index;
 
     scalar_t t = rays_t[0];
+    scalar_t max_near = max_nears[0];
     
     scalar_t weight_sum = weights_sum[0];
     scalar_t d = depth[0];
@@ -1148,9 +1151,9 @@ __global__ void kernel_composite_rays_2(
         
         const scalar_t alpha = 1.0f - __expf(- sigmas[0] * deltas[0]);
 
-        const scalar_t T = 1 - weight_sum;
+        const scalar_t T = weight_sum;
         const scalar_t weight = alpha * T;
-        weight_sum += weight;
+        weight_sum *= (1 - alpha);
 
         t += deltas[1];
         d += weight * t;
@@ -1179,10 +1182,10 @@ __global__ void kernel_composite_rays_2(
     image[2] = b;
 }
 
-void composite_rays_2(const uint32_t n_alive, const uint32_t n_step, const float T_thresh, at::Tensor rays_alive, at::Tensor rays_t, at::Tensor sigmas, at::Tensor rgbs, at::Tensor deltas, at::Tensor weights, at::Tensor depth, at::Tensor image) {
+void composite_rays_2(const uint32_t n_alive, const uint32_t n_step, const float T_thresh, at::Tensor rays_alive, at::Tensor rays_t, at::Tensor sigmas, at::Tensor rgbs, at::Tensor deltas, at::Tensor weights, at::Tensor depth, at::Tensor image, at::Tensor max_nears) {
     static constexpr uint32_t N_THREAD = 128;
     AT_DISPATCH_FLOATING_TYPES_AND_HALF(
     image.scalar_type(), "composite_rays_2", ([&] {
-        kernel_composite_rays_2<<<div_round_up(n_alive, N_THREAD), N_THREAD>>>(n_alive, n_step, T_thresh, rays_alive.data_ptr<int>(), rays_t.data_ptr<scalar_t>(), sigmas.data_ptr<scalar_t>(), rgbs.data_ptr<scalar_t>(), deltas.data_ptr<scalar_t>(), weights.data_ptr<scalar_t>(), depth.data_ptr<scalar_t>(), image.data_ptr<scalar_t>());
+        kernel_composite_rays_2<<<div_round_up(n_alive, N_THREAD), N_THREAD>>>(n_alive, n_step, T_thresh, rays_alive.data_ptr<int>(), rays_t.data_ptr<scalar_t>(), sigmas.data_ptr<scalar_t>(), rgbs.data_ptr<scalar_t>(), deltas.data_ptr<scalar_t>(), weights.data_ptr<scalar_t>(), depth.data_ptr<scalar_t>(), image.data_ptr<scalar_t>(), max_nears.data_ptr<scalar_t>());
     }));
 }

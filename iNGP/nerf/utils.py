@@ -766,6 +766,13 @@ class Trainer(object):
                     for metric in self.metrics:
                         metric.update(pred, truth)
 
+                    pred = pred.detach().cpu().numpy()
+                    pred = (pred * 255).astype(np.uint8)
+
+                    save_path = os.path.join(self.workspace, 'validation')
+                    os.makedirs(save_path, exist_ok=True)
+                    cv2.imwrite(f"{save_path}/result_{idx}.png", cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
+
         self.log(f"run_type: {run_type}", style="blue")
         self.log(f"Average Time: {ms / 1000:0.2f} s, Min Time: {min_ms / 1000:0.2f} s, Max Time: {max_ms / 1000:0.2f} s", style="blue")
         self.log(f"Average FPS: {size / (ms / 1000):0.2f}, Min FPS: {size / (min_ms / 1000):0.2f}, Max FPS: {size / (max_ms / 1000):0.2f}", style="blue")

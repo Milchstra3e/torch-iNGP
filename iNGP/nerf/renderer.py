@@ -305,10 +305,10 @@ class NeRFRenderer(nn.Module):
 
         return image
 
-    def run_multiple_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, max_steps=1024, T_thresh=0, **kwargs):                
+    def run_multiple_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, max_steps=1024, T_thresh=1e-4, **kwargs):                
         BIG_NUMBER = 2 ** 24
         
-        group_grid_cnt = 1
+        group_grid_cnt = 4
         device = rays_o.device
         bg_color = 1
         dtype = torch.float32
@@ -320,12 +320,21 @@ class NeRFRenderer(nn.Module):
         rays_o = rays_o.contiguous().view(-1, 3)
         rays_d = rays_d.contiguous().view(-1, 3)
 
-        weights_sum = torch.zeros(BN, dtype=dtype, device=device)
+        weights_mul = torch.ones(BN, dtype=dtype, device=device)
         depth = torch.zeros(BN, dtype=dtype, device=device)
         image = torch.zeros(BN, 3, dtype=dtype, device=device)
+        nears = torch.zeros(BN, dtype=dtype, device=device)
+        fars = torch.zeros(BN, dtype=dtype, device=device)
+        max_nears = torch.zeros(BN, dtype=dtype, device=device)
         
         for group_grid_idx in range(group_grid_cnt ** 3):
-            nears, fars = raymarching.near_far_from_aabb_2(rays_o, rays_d, self.aabb_infer, self.min_near, group_grid_cnt, group_grid_idx)
+            tmp_image = torch.zeros(BN, 3, dtype=dtype, device=device)
+            tmp_weights_mul = torch.ones(BN, dtype=dtype, device=device)
+            
+            raymarching.near_far_from_aabb_2(rays_o, rays_d,
+                                             self.aabb_infer,
+                                             self.min_near, group_grid_cnt, group_grid_idx,
+                                             nears, fars, max_nears)
             mask = nears >= BIG_NUMBER
                         
             n_alive = BN
@@ -335,7 +344,9 @@ class NeRFRenderer(nn.Module):
 
             step = 0
             
-            while step < max_steps:
+            tmp_max_steps = max_steps
+
+            while step < tmp_max_steps:
                 rays_alive = rays_alive[rays_alive >= 0]
                 n_alive = rays_alive.shape[0]
                 
@@ -344,16 +355,23 @@ class NeRFRenderer(nn.Module):
 
                 n_step = max(min(BN // n_alive, 8), 1)
 
-                xyzs, dirs, deltas = raymarching.march_rays_2(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound, self.density_bitfield, self.cascade, self.grid_size, nears, fars, 128, perturb if step == 0 else False, dt_gamma, max_steps)
+                xyzs, dirs, deltas = raymarching.march_rays_2(n_alive, n_step, rays_alive, rays_t, rays_o, rays_d, self.bound, self.density_bitfield, self.cascade, self.grid_size, nears, fars, 128, perturb if step == 0 else False, dt_gamma, tmp_max_steps)
 
                 sigmas, rgbs = self(xyzs, dirs)
                 sigmas = self.density_scale * sigmas
 
-                raymarching.composite_rays_2(n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, weights_sum, depth, image, T_thresh)
+                raymarching.composite_rays_2(n_alive, n_step, rays_alive, rays_t, sigmas, rgbs, deltas, tmp_weights_mul, depth, tmp_image, T_thresh, max_nears)
 
                 step += n_step
 
-        image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
+            mask_1 = (nears >= max_nears) & ~mask
+            mask_2 = (nears < max_nears) & ~mask
+                                    
+            image[mask_1] = image[mask_1] + weights_mul[mask_1].unsqueeze(-1) * tmp_image[mask_1]
+            image[mask_2] = tmp_image[mask_2] + tmp_weights_mul[mask_2].unsqueeze(-1) * image[mask_2]
+            weights_mul *= tmp_weights_mul
+
+        image = image + weights_mul.unsqueeze(-1) * bg_color
         image = image.view(*prefix, 3)
 
         return image
