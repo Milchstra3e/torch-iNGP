@@ -58,6 +58,8 @@ if __name__ == '__main__':
     parser.add_argument('--rand_pose', type=int, default=-1, help="<0 uses no rand pose, =0 only uses rand pose, >0 sample one rand pose every $ known poses")
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--run_type', type=str, default="single_cuda")
+    parser.add_argument('--group_grid_cnt', type=int, default=2)
+    parser.add_argument('--debug', action='store_true')
 
     opt = parser.parse_args()
 
@@ -88,4 +90,4 @@ if __name__ == '__main__':
     test_loader = NeRFDataset(opt, device=device, type='test').dataloader()
 
     if test_loader.has_gt:        
-        trainer.do_benchmark(opt.batch_size, opt.run_type, test_loader)
+        trainer.do_benchmark(test_loader)

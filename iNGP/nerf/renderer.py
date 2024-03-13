@@ -308,7 +308,7 @@ class NeRFRenderer(nn.Module):
     def run_multiple_cuda(self, rays_o, rays_d, dt_gamma=0, bg_color=None, perturb=False, max_steps=1024, T_thresh=1e-4, **kwargs):                
         BIG_NUMBER = 2 ** 24
         
-        group_grid_cnt = 4
+        group_grid_cnt = kwargs["group_grid_cnt"]
         device = rays_o.device
         bg_color = 1
         dtype = torch.float32
